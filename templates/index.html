@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Weston Pool Scoreboard</title>
+
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#0b0f14">
+
+<style>
+:root {
+    --bg: #0b0f14;
+    --panel: #141a22;
+    --panel-alt: #1b2430;
+    --text: #ffffff;
+    --muted: #9aa4b2;
+    --radius: 14px;
+    --accent: #00b3ff;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+/* =========================
+   DIVISION ACCENTS
+========================= */
+[data-division="Division 1"] { --accent: #00b3ff; }
+[data-division="Division 2"] { --accent: #22c55e; }
+[data-division="Division 3"] { --accent: #f59e0b; }
+[data-division="Division 4"] { --accent: #ef4444; }
+[data-division="Division 5"] { --accent: #a855f7; }
+[data-division="Division 6"] { --accent: #14b8a6; }
+
+/* =========================
+   HEADER
+========================= */
+header {
+    padding: 22px 18px 10px;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 1.8rem;
+}
+
+header p {
+    margin: 6px 0 0;
+    color: var(--muted);
+    font-size: 0.95rem;
+}
+
+/* =========================
+   PAGE WRAPPER
+========================= */
+main {
+    padding: 10px 14px 40px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+/* =========================
+   DIVISION CARD
+========================= */
+.division {
+    background: var(--panel);
+    border-radius: var(--radius);
+    margin-top: 18px;
+    overflow: hidden;
+    border-left: 4px solid var(--accent);
+}
+
+.division h2 {
+    margin: 0;
+    padding: 14px 16px;
+    font-size: 1.05rem;
+    background: linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--accent) 30%, #141a22),
+        #141a22
+    );
+}
+
+/* =========================
+   TEAM GRID
+========================= */
+.team-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+    padding: 14px;
+}
+
+/* =========================
+   TEAM CARD
+========================= */
+.team-card {
+    position: relative;
+    background: var(--panel-alt);
+    border-radius: 12px;
+    padding: 14px 10px;
+    text-decoration: none;
+    color: var(--text);
+    text-align: center;
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: transform 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+}
+
+.team-card:hover {
+    transform: translateY(-2px);
+    background: #233044;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+}
+
+.team-card:active {
+    transform: scale(0.98);
+}
+
+/* =========================
+   LIVE INDICATOR
+========================= */
+.live-dot {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 8px #22c55e;
+    display: none;
+    animation: pulse 1.2s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.4); opacity: 0.6; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* =========================
+   IOS INSTALL HINT
+========================= */
+#iosHint {
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    right: 16px;
+    background: #1b2430;
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    display: none;
+    z-index: 100;
+}
+
+#iosHint p {
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+#iosHint button {
+    margin-top: 10px;
+    background: none;
+    border: none;
+    color: #00b3ff;
+    font-size: 0.85rem;
+    padding: 0;
+    cursor: pointer;
+}
+
+/* =========================
+   FOOTER
+========================= */
+footer {
+    text-align: center;
+    padding: 30px 10px 10px;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>🎱 Weston Pool League Scoreboard</h1>
+    <p>Select your team to view the live match</p>
+</header>
+
+<main>
+
+<!-- ⭐ RECENTLY VIEWED -->
+<section id="recent" class="division" style="display:none">
+    <h2>⭐ Recently Viewed</h2>
+    <div class="team-grid" id="recentTeams"></div>
+</section>
+
+{% for division, teams in divisions.items() %}
+<section class="division" data-division="{{ division }}">
+    <h2>{{ division }}</h2>
+
+    <div class="team-grid">
+        {% for team in teams %}
+        <a class="team-card" href="/team/{{ team.slug }}" data-slug="{{ team.slug }}">
+            <div class="live-dot"></div>
+            {{ team.name }}
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endfor %}
+
+</main>
+
+<footer>
+    Live scores update automatically during matches
+</footer>
+
+<!-- 🍎 iOS INSTALL HINT -->
+<div id="iosHint">
+    <p>
+        📲 Add this scoreboard to your Home Screen<br>
+        Tap <strong>Share</strong> then <strong>Add to Home Screen</strong>
+    </p>
+    <button onclick="dismissIOSHint()">Got it</button>
+</div>
+
+<script>
+/* =========================
+   RECENTLY VIEWED
+========================= */
+const recent = JSON.parse(localStorage.getItem("recentTeams") || "[]");
+
+if (recent.length) {
+    const grid = document.getElementById("recentTeams");
+    recent.forEach(team => {
+        const a = document.createElement("a");
+        a.className = "team-card";
+        a.href = "/team/" + team.slug;
+        a.textContent = team.name;
+        grid.appendChild(a);
+    });
+    document.getElementById("recent").style.display = "block";
+}
+
+/* =========================
+   LIVE INDICATORS
+========================= */
+async function updateLiveIndicators() {
+    try {
+        const res = await fetch("/api/live-teams");
+        const liveSlugs = await res.json();
+
+        document.querySelectorAll(".live-dot").forEach(dot => {
+            dot.style.display = "none";
+        });
+
+        liveSlugs.forEach(slug => {
+            const card = document.querySelector(`[data-slug="${slug}"]`);
+            if (card) {
+                const dot = card.querySelector(".live-dot");
+                if (dot) dot.style.display = "block";
+            }
+        });
+    } catch {}
+}
+
+updateLiveIndicators();
+setInterval(updateLiveIndicators, 10000);
+
+/* =========================
+   IOS INSTALL HINT LOGIC
+========================= */
+function isIOSSafari() {
+    const ua = window.navigator.userAgent;
+    const isIOS = /iPhone|iPad|iPod/.test(ua);
+    const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+    return isIOS && isSafari;
+}
+
+function dismissIOSHint() {
+    localStorage.setItem("iosInstallHintDismissed", "1");
+    document.getElementById("iosHint").style.display = "none";
+}
+
+if (
+    isIOSSafari() &&
+    !window.navigator.standalone &&
+    !localStorage.getItem("iosInstallHintDismissed")
+) {
+    document.getElementById("iosHint").style.display = "block";
+}
+
+/* =========================
+   PWA SERVICE WORKER
+========================= */
+if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/static/sw.js");
+}
+</script>
+
+</body>
+</html>

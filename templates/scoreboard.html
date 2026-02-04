@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+
+<title>Live Scoreboard</title>
+
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+<style>
+html, body {
+    margin: 0;
+    height: 100%;
+    background: black;
+    color: white;
+    font-family: Arial, sans-serif;
+    overflow: hidden;
+}
+
+/* =========================
+   NOT LIVE SCREEN
+========================= */
+#notLive {
+    position: absolute;
+    inset: 0;
+    background: black;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    z-index: 10;
+}
+
+/* =========================
+   SCOREBOARD
+========================= */
+#board {
+    display: flex;
+    height: 100vh;
+}
+
+.team {
+    width: 50%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    transition: filter 0.5s;
+}
+
+.home { background: #0057ff; }
+.away { background: #d10000; }
+
+.name {
+    font-size: 4vh;
+}
+
+.score {
+    font-size: 20vh;
+    font-weight: bold;
+    transition: transform 0.3s ease;
+}
+
+.score.bump {
+    animation: bump 0.4s ease;
+}
+
+@keyframes bump {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.3); }
+    100% { transform: scale(1); }
+}
+
+/* =========================
+   LAST UPDATED
+========================= */
+#updated {
+    position: fixed;
+    bottom: 10px;
+    right: 14px;
+    font-size: 0.85rem;
+    opacity: 0.75;
+}
+
+/* =========================
+   WIN EFFECTS
+========================= */
+.team.win {
+    animation: winGlow 1.2s infinite alternate;
+}
+
+@keyframes winGlow {
+    from { filter: brightness(1); }
+    to { filter: brightness(1.6) saturate(1.3); }
+}
+
+/* Screen flash */
+#flash {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle, rgba(255,215,0,0.35), transparent 70%);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 50;
+}
+
+.flash {
+    animation: flash 0.6s ease;
+}
+
+@keyframes flash {
+    0% { opacity: 0; }
+    30% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+/* =========================
+   CONFETTI
+========================= */
+.confetti {
+    position: fixed;
+    top: -10vh;
+    width: 8px;
+    height: 14px;
+    opacity: 0.9;
+    animation: fall linear forwards;
+    z-index: 40;
+}
+
+.confetti.big {
+    width: 14px;
+    height: 20px;
+}
+
+@keyframes fall {
+    to {
+        transform: translateY(110vh) rotate(720deg);
+    }
+}
+
+/* =========================
+   FIREWORKS
+========================= */
+.firework {
+    position: fixed;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 45;
+}
+
+@keyframes explode {
+    from {
+        transform: translate(0,0) scale(1);
+        opacity: 1;
+    }
+    to {
+        transform: translate(var(--dx), var(--dy)) scale(0.2);
+        opacity: 0;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div id="notLive">
+    <div style="font-size:6vh;">🕒 Match Not Live</div>
+    <div style="font-size:3.5vh; margin-top:10px;">
+        The scoreboard will appear automatically when the match starts
+    </div>
+    <div id="testHint"
+         style="display:none; margin-top:20px; font-size:2.5vh; opacity:0.7;">
+        Test mode active — refresh to replay the test match
+    </div>
+</div>
+
+<div id="board">
+    <div class="team home" id="home">
+        <div class="name" id="homeName">HOME</div>
+        <div class="score" id="homeScore">0</div>
+    </div>
+    <div class="team away" id="away">
+        <div class="name" id="awayName">AWAY</div>
+        <div class="score" id="awayScore">0</div>
+    </div>
+</div>
+
+<div id="updated"></div>
+<div id="flash"></div>
+
+<script>
+/* =========================
+   CONFIG
+========================= */
+
+const SOCKET_KEY = "frames-secret";
+
+/* Extract slug from URL */
+const pathParts = window.location.pathname.split("/");
+const TEAM_SLUG = pathParts[pathParts.length - 1];
+
+/* =========================
+   SOCKET SETUP
+========================= */
+
+const socket = io({
+    query: { key: SOCKET_KEY }
+});
+
+socket.on("connect", () => {
+    socket.emit("join_team", { slug: TEAM_SLUG });
+});
+
+/* =========================
+   RECENTLY VIEWED
+========================= */
+
+const recent = JSON.parse(localStorage.getItem("recentTeams") || "[]");
+const existing = recent.find(t => t.slug === TEAM_SLUG);
+
+if (!existing) {
+    recent.unshift({
+        slug: TEAM_SLUG,
+        name: TEAM_SLUG.replace(/-/g, " ")
+    });
+}
+
+localStorage.setItem("recentTeams", JSON.stringify(recent.slice(0, 5)));
+
+/* =========================
+   DOM REFERENCES
+========================= */
+
+const home = document.getElementById("home");
+const away = document.getElementById("away");
+const homeName = document.getElementById("homeName");
+const awayName = document.getElementById("awayName");
+const homeScore = document.getElementById("homeScore");
+const awayScore = document.getElementById("awayScore");
+const notLive = document.getElementById("notLive");
+const board = document.getElementById("board");
+const testHint = document.getElementById("testHint");
+const updated = document.getElementById("updated");
+const flash = document.getElementById("flash");
+
+let lastHome = null;
+let lastAway = null;
+let homeWon = false;
+let awayWon = false;
+
+function bump(el) {
+    el.classList.remove("bump");
+    void el.offsetWidth;
+    el.classList.add("bump");
+}
+
+/* =========================
+   CELEBRATIONS
+========================= */
+
+function screenFlash() {
+    flash.classList.remove("flash");
+    void flash.offsetWidth;
+    flash.classList.add("flash");
+}
+
+function layeredConfetti() {
+    const colors = ["#FFD700", "#FFB000", "#FF7A00", "#FFFFFF"];
+    for (let i = 0; i < 260; i++) {
+        const c = document.createElement("div");
+        c.className = "confetti" + (Math.random() > 0.7 ? " big" : "");
+        c.style.left = Math.random() * 100 + "vw";
+        c.style.background = colors[Math.floor(Math.random() * colors.length)];
+        c.style.animationDuration = (2 + Math.random() * 3) + "s";
+        c.style.animationDelay = Math.random() + "s";
+        document.body.appendChild(c);
+        setTimeout(() => c.remove(), 6000);
+    }
+}
+
+function fireworkBurst(x, y, power = 1) {
+    const colors = ["#ff0044", "#00eaff", "#ffe600", "#ffffff"];
+    for (let i = 0; i < 60 * power; i++) {
+        const p = document.createElement("div");
+        p.className = "firework";
+        p.style.left = x + "px";
+        p.style.top = y + "px";
+        p.style.background = colors[Math.floor(Math.random() * colors.length)];
+
+        const angle = Math.random() * Math.PI * 2;
+        const distance = (100 + Math.random() * 160) * power;
+
+        p.style.setProperty("--dx", Math.cos(angle) * distance + "px");
+        p.style.setProperty("--dy", Math.sin(angle) * distance + "px");
+        p.style.animation = "explode 1.4s ease-out forwards";
+
+        document.body.appendChild(p);
+        setTimeout(() => p.remove(), 1500);
+    }
+}
+
+function MASSIVE_WIN_CELEBRATION() {
+    screenFlash();
+    layeredConfetti();
+    for (let i = 0; i < 5; i++) {
+        setTimeout(() => {
+            fireworkBurst(
+                Math.random() * window.innerWidth,
+                Math.random() * window.innerHeight * 0.5,
+                1 + Math.random()
+            );
+        }, i * 300);
+    }
+}
+
+/* =========================
+   SOCKET EVENTS
+========================= */
+
+socket.on("app_mode", data => {
+    testHint.style.display = data.test_mode ? "block" : "none";
+});
+
+socket.on("match_status", data => {
+    if (data.status === "live") {
+        notLive.style.display = "none";
+        board.style.display = "flex";
+    } else {
+        notLive.style.display = "flex";
+        board.style.display = "none";
+        updated.textContent = "";
+        homeWon = false;
+        awayWon = false;
+        home.classList.remove("win");
+        away.classList.remove("win");
+    }
+});
+
+socket.on("score_update", data => {
+    homeName.textContent = data.home.name;
+    awayName.textContent = data.away.name;
+
+    if (lastHome !== data.home.score) bump(homeScore);
+    if (lastAway !== data.away.score) bump(awayScore);
+
+    homeScore.textContent = data.home.score;
+    awayScore.textContent = data.away.score;
+
+    lastHome = data.home.score;
+    lastAway = data.away.score;
+
+    if (data.updated) {
+        const d = new Date(data.updated);
+        updated.textContent = "Last updated: " + d.toLocaleTimeString();
+    }
+
+    const WIN_SCORE = 7;
+
+    if (data.home.score >= WIN_SCORE && !homeWon) {
+        homeWon = true;
+        home.classList.add("win");
+        MASSIVE_WIN_CELEBRATION();
+    }
+
+    if (data.away.score >= WIN_SCORE && !awayWon) {
+        awayWon = true;
+        away.classList.add("win");
+        MASSIVE_WIN_CELEBRATION();
+    }
+});
+</script>
+
+</body>
+</html>

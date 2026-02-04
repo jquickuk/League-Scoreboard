@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pool Scoreboard</title>
+</head>
+<body>
+
+<h1>Select your team</h1>
+
+{% for division, teams in divisions.items() %}
+  <h2>{{ division }}</h2>
+  <ul>
+    {% for team in teams %}
+      <li>
+        <a href="/team/{{ team.slug }}">
+          {{ team.name }}
+        </a>
+      </li>
+    {% endfor %}
+  </ul>
+{% endfor %}
+
+</body>
+</html>

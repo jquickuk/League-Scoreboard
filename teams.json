@@ -1,0 +1,249 @@
+{
+  "Division 1": [
+    {
+      "id": 46604,
+      "name": "Ministry of Pool",
+      "slug": "ministry-of-pool"
+    },
+    {
+      "id": 47727,
+      "name": "Gurneys",
+      "slug": "gurneys"
+    },
+    {
+      "id": 47489,
+      "name": "Breaking Bad",
+      "slug": "breaking-bad"
+    },
+    {
+      "id": 45073,
+      "name": "Smash",
+      "slug": "smash"
+    },
+    {
+      "id": 46605,
+      "name": "AFDs",
+      "slug": "afds"
+    },
+    {
+      "id": 47720,
+      "name": "Bristol House Sharks",
+      "slug": "bristol-house-sharks"
+    },
+    {
+      "id": 45074,
+      "name": "Join The Cue",
+      "slug": "join-the-cue"
+    },
+    {
+      "id": 48996,
+      "name": "Frames Seamen",
+      "slug": "frames-seamen"
+    }
+  ],
+  "Division 2": [
+    {
+      "id": 48243,
+      "name": "Old Konks Donk",
+      "slug": "old-konks-donk"
+    },
+    {
+      "id": 47491,
+      "name": "Darkside",
+      "slug": "darkside"
+    },
+    {
+      "id": 48998,
+      "name": "Hall of Frames",
+      "slug": "hall-of-frames"
+    },
+    {
+      "id": 48114,
+      "name": "You've Been Framed",
+      "slug": "youve-been-framed"
+    },
+    {
+      "id": 47487,
+      "name": "Frames Shockers",
+      "slug": "frames-shockers"
+    },
+    {
+      "id": 49006,
+      "name": "Original Headcases",
+      "slug": "original-headcases"
+    },
+    {
+      "id": 49000,
+      "name": "Cardboard Cutouts",
+      "slug": "cardboard-cutouts"
+    }
+  ],
+  "Division 3": [
+    {
+      "id": 47497,
+      "name": "Regency Rapscallions",
+      "slug": "regency-rapscallions"
+    },
+    {
+      "id": 47493,
+      "name": "Headhunters",
+      "slug": "headhunters"
+    },
+    {
+      "id": 47496,
+      "name": "The Regency",
+      "slug": "the-regency"
+    },
+    {
+      "id": 47731,
+      "name": "Walnut Whips",
+      "slug": "walnut-whips"
+    },
+    {
+      "id": 48113,
+      "name": "The Crew",
+      "slug": "the-crew"
+    },
+    {
+      "id": 49036,
+      "name": "Social Bunch",
+      "slug": "social-bunch"
+    },
+    {
+      "id": 47492,
+      "name": "Frames Villains",
+      "slug": "frames-villains"
+    },
+    {
+      "id": 49037,
+      "name": "Walnut Warriors",
+      "slug": "walnut-warriors"
+    }
+  ],
+  "Division 4": [
+    {
+      "id": 47490,
+      "name": "Usual Suspects",
+      "slug": "usual-suspects"
+    },
+    {
+      "id": 45076,
+      "name": "Frames Fugitives",
+      "slug": "frames-fugitives"
+    },
+    {
+      "id": 48993,
+      "name": "Rack 'em Royals",
+      "slug": "rack-em-royals"
+    },
+    {
+      "id": 47721,
+      "name": "Bear Behinders",
+      "slug": "bear-behinders"
+    },
+    {
+      "id": 48239,
+      "name": "Pocket Rockets",
+      "slug": "pocket-rockets"
+    },
+    {
+      "id": 47723,
+      "name": "W.ancaster",
+      "slug": "wancaster"
+    },
+    {
+      "id": 47722,
+      "name": "Reds",
+      "slug": "reds"
+    },
+    {
+      "id": 48454,
+      "name": "Bristol House Bandits",
+      "slug": "bristol-house-bandits"
+    }
+  ],
+  "Division 5": [
+    {
+      "id": 47495,
+      "name": "Weston Golf Club",
+      "slug": "weston-golf-club"
+    },
+    {
+      "id": 49138,
+      "name": "Worlebury Shankers",
+      "slug": "worlebury-shankers"
+    },
+    {
+      "id": 47498,
+      "name": "The Borough Boys",
+      "slug": "the-borough-boys"
+    },
+    {
+      "id": 48999,
+      "name": "Tavern Townies",
+      "slug": "tavern-townies"
+    },
+    {
+      "id": 45075,
+      "name": "The Misfits",
+      "slug": "the-misfits"
+    },
+    {
+      "id": 48231,
+      "name": "49ers",
+      "slug": "49ers"
+    },
+    {
+      "id": 45077,
+      "name": "Black Balls Matter",
+      "slug": "black-balls-matter"
+    },
+    {
+      "id": 49137,
+      "name": "Ace's",
+      "slug": "aces"
+    }
+  ],
+  "Division 6": [
+    {
+      "id": 49498,
+      "name": "Cabin 8",
+      "slug": "cabin-8"
+    },
+    {
+      "id": 47502,
+      "name": "Deckhands",
+      "slug": "deckhands"
+    },
+    {
+      "id": 47726,
+      "name": "Rack 'n' Roll",
+      "slug": "rack-n-roll"
+    },
+    {
+      "id": 48995,
+      "name": "Summerhouse Krew",
+      "slug": "summerhouse-krew"
+    },
+    {
+      "id": 48994,
+      "name": "Legends",
+      "slug": "legends"
+    },
+    {
+      "id": 45078,
+      "name": "Allstars Shamrocks",
+      "slug": "allstars-shamrocks"
+    },
+    {
+      "id": 48200,
+      "name": "Ball's Yeet",
+      "slug": "balls-yeet"
+    },
+    {
+      "id": 49008,
+      "name": "Ancaholics",
+      "slug": "ancaholics"
+    }
+  ]
+}
