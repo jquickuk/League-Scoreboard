@@ -258,3 +258,9 @@ def scrape_loop(team_id: int, slug: str, room: str) -> None:
             app.logger.exception("Fatal scrape loop error for %s: %s", room, exc)
         finally:
             browser.close()
+
+# =====================================================
+# ENTRY POINT
+# =====================================================
+if __name__ == "__main__":
+    socketio.run(app, host="0.0.0.0", port=PORT)
