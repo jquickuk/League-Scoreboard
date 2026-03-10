@@ -114,6 +114,11 @@ def on_disconnect() -> None:
             room_counts[room] = max(0, room_counts.get(room, 0) - 1)
 
 
+browser = p.chromium.launch(
+    headless=True,
+    args=["--no-sandbox", "--disable-dev-shm-usage"]
+)
+
 # =====================================================
 # SOCKET ROOM JOIN
 # =====================================================
