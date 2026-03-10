@@ -49,6 +49,12 @@ TEAM_BY_SLUG = {
     for team in teams
 }
 
+TEAM_NAME_TO_SLUG = {
+    team["name"].strip().lower(): team["slug"]
+    for teams in TEAMS_BY_DIVISION.values()
+    for team in teams
+}
+
 # =====================================================
 # LIVE TEAM TRACKING
 # =====================================================
@@ -62,6 +68,8 @@ scrapers: dict[str, Thread] = {}
 room_counts: dict[str, int] = {}
 sid_rooms: dict[str, set[str]] = {}
 scraper_lock = Lock()
+global_scraper_started = False
+global_scraper_lock = Lock()
 
 # =====================================================
 # ROUTES
@@ -136,24 +144,41 @@ def join_team_handler(data):
 
 
 # =====================================================
-# SCRAPER HELPERS
+# GLOBAL LIVE SCRAPER HELPERS
 # =====================================================
-def _extract_match_state_from_page(page: Any, team_id: int) -> dict[str, Any] | None:
-    team = next((t for t in TEAM_BY_SLUG.values() if int(t["id"]) == int(team_id)), None)
-    if not team:
-        app.logger.warning("No team found for team_id=%s", team_id)
-        return None
-
-    target_name = team["name"].strip().lower()
+def _extract_live_team_slugs_from_page(page: Any) -> set[str]:
+    live_slugs: set[str] = set()
 
     try:
-        page_text = page.inner_text("body")
-        app.logger.info("Page body sample for %s: %r", team_id, page_text[:1000])
+        body_text = page.inner_text("body")
+        app.logger.info("Global scraper page sample: %r", body_text[:800])
     except Exception as exc:
-        app.logger.warning("Could not read page body for %s: %s", team_id, exc)
+        app.logger.warning("Global scraper could not read page body: %s", exc)
 
     cards = page.query_selector_all("div.row.pb-3.mx-0")
-    app.logger.info("Scanning %d match cards for team_id=%s", len(cards), team_id)
+    app.logger.info("Global scraper scanning %d match cards", len(cards))
+
+    ignored_lines = {
+        "live",
+        "live scores",
+        "friendly",
+        "hewlett cup",
+        "league cup",
+        "share tweet share",
+        "facebook group",
+        "information",
+        "fixtures",
+        "results",
+        "league tables",
+        "player stats",
+        "competitions",
+        "roll of honour",
+        "about us",
+        "terms and conditions",
+        "privacy policy",
+        "release notes",
+        "status and maintenance",
+    }
 
     for card in cards:
         try:
@@ -164,7 +189,148 @@ def _extract_match_state_from_page(page: Any, team_id: int) -> dict[str, Any] | 
         if not text:
             continue
 
-        if target_name not in text.lower():
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        score_index = None
+
+        for i, line in enumerate(lines):
+            if re.fullmatch(r"(\d+)\s*\|\s*(\d+)", line):
+                score_index = i
+                break
+
+        if score_index is None:
+            continue
+
+        before = None
+        after = None
+
+        for i in range(score_index - 1, -1, -1):
+            line = lines[i]
+            low = line.lower()
+            if line.startswith("@"):
+                continue
+            if "|" in line:
+                continue
+            if len(line) > 40:
+                continue
+            if low in ignored_lines:
+                continue
+            before = line
+            break
+
+        for i in range(score_index + 1, len(lines)):
+            line = lines[i]
+            low = line.lower()
+            if line.startswith("@"):
+                continue
+            if "|" in line:
+                continue
+            if len(line) > 40:
+                continue
+            if low in ignored_lines:
+                continue
+            after = line
+            break
+
+        if before:
+            slug = TEAM_NAME_TO_SLUG.get(before.strip().lower())
+            if slug:
+                live_slugs.add(slug)
+
+        if after:
+            slug = TEAM_NAME_TO_SLUG.get(after.strip().lower())
+            if slug:
+                live_slugs.add(slug)
+
+    app.logger.info("Global scraper found live slugs: %s", sorted(live_slugs))
+    return live_slugs
+
+
+def global_live_loop() -> None:
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage"],
+        )
+        page = browser.new_page()
+
+        try:
+            while True:
+                try:
+                    page.goto(LIVE_URL, timeout=60000, wait_until="domcontentloaded")
+                    page.wait_for_load_state("networkidle", timeout=15000)
+
+                    current_live = _extract_live_team_slugs_from_page(page)
+
+                    with live_lock:
+                        live_team_slugs.clear()
+                        live_team_slugs.update(current_live)
+
+                except PlaywrightTimeoutError:
+                    app.logger.warning("Global scraper timed out loading live scores page")
+                except Exception as exc:
+                    app.logger.exception("Global scraper error: %s", exc)
+
+                time.sleep(SCRAPE_INTERVAL)
+        finally:
+            browser.close()
+
+
+def ensure_global_scraper_started() -> None:
+    global global_scraper_started
+
+    with global_scraper_lock:
+        if global_scraper_started:
+            return
+
+        thread = Thread(target=global_live_loop, daemon=True)
+        thread.start()
+        global_scraper_started = True
+        app.logger.info("Started global live scraper")
+
+
+# =====================================================
+# TEAM SCORE SCRAPER HELPERS
+# =====================================================
+def _extract_match_state_from_page(page: Any, team_id: int) -> dict[str, Any] | None:
+    team = next((t for t in TEAM_BY_SLUG.values() if int(t["id"]) == int(team_id)), None)
+    if not team:
+        app.logger.warning("No team found for team_id=%s", team_id)
+        return None
+
+    target_name = team["name"].strip().lower()
+
+    cards = page.query_selector_all("div.row.pb-3.mx-0")
+    app.logger.info("Scanning %d match cards for team_id=%s", len(cards), team_id)
+
+    ignored_lines = {
+        "live",
+        "live scores",
+        "friendly",
+        "hewlett cup",
+        "league cup",
+        "share tweet share",
+        "facebook group",
+        "information",
+        "fixtures",
+        "results",
+        "league tables",
+        "player stats",
+        "competitions",
+        "roll of honour",
+        "about us",
+        "terms and conditions",
+        "privacy policy",
+        "release notes",
+        "status and maintenance",
+    }
+
+    for card in cards:
+        try:
+            text = (card.inner_text() or "").strip()
+        except Exception:
+            continue
+
+        if not text or target_name not in text.lower():
             continue
 
         app.logger.info("Candidate card for %s: %r", team_id, text[:500])
@@ -185,28 +351,6 @@ def _extract_match_state_from_page(page: Any, team_id: int) -> dict[str, Any] | 
 
         before = None
         after = None
-
-        ignored_lines = {
-            "live",
-            "live scores",
-            "friendly",
-            "hewlett cup",
-            "league cup",
-            "share tweet share",
-            "facebook group",
-            "information",
-            "fixtures",
-            "results",
-            "league tables",
-            "player stats",
-            "competitions",
-            "roll of honour",
-            "about us",
-            "terms and conditions",
-            "privacy policy",
-            "release notes",
-            "status and maintenance",
-        }
 
         for i in range(score_index - 1, -1, -1):
             line = lines[i]
@@ -237,7 +381,6 @@ def _extract_match_state_from_page(page: Any, team_id: int) -> dict[str, Any] | 
             break
 
         if not before or not after:
-            app.logger.info("Could not identify teams around score for %s", team_id)
             continue
 
         home_score, away_score = map(int, score_match.groups())
@@ -254,7 +397,7 @@ def _extract_match_state_from_page(page: Any, team_id: int) -> dict[str, Any] | 
 
 
 # =====================================================
-# SCRAPER LOOP
+# TEAM SCORE SCRAPER LOOP
 # =====================================================
 def scrape_loop(team_id: int, slug: str, room: str) -> None:
     last_state: dict[str, Any] | None = None
@@ -273,8 +416,6 @@ def scrape_loop(team_id: int, slug: str, room: str) -> None:
                     if room_counts.get(room, 0) <= 0:
                         scrapers.pop(room, None)
                         room_counts.pop(room, None)
-                        with live_lock:
-                            live_team_slugs.discard(slug)
                         app.logger.info("Stopping scraper for %s", room)
                         return
 
@@ -287,17 +428,10 @@ def scrape_loop(team_id: int, slug: str, room: str) -> None:
                     app.logger.warning("Error loading live scores page for %s: %s", room, exc)
 
                 current_state = _extract_match_state_from_page(page, team_id)
-                found_live = current_state is not None
-
-                with live_lock:
-                    if found_live:
-                        live_team_slugs.add(slug)
-                    else:
-                        live_team_slugs.discard(slug)
 
                 socketio.emit(
                     "match_status",
-                    {"status": "live" if found_live else "not_live"},
+                    {"status": "live" if current_state else "not_live"},
                     room=room,
                 )
 
@@ -317,4 +451,5 @@ def scrape_loop(team_id: int, slug: str, room: str) -> None:
 # ENTRY POINT
 # =====================================================
 if __name__ == "__main__":
+    ensure_global_scraper_started()
     socketio.run(app, host="0.0.0.0", port=PORT)
