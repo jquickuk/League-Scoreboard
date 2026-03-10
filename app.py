@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Pool Scoreboard Backend.
-
-Changes in this version:
-- Fixes the team route to accept a slug parameter.
-- Uses Flask-SocketIO's join_room helper correctly.
-- Makes live-match detection more resilient to Weston Pool League markup changes.
-- Adds safer extraction and logging around score parsing.
-"""
+"""Pool Scoreboard Backend."""
 
 from __future__ import annotations
 
@@ -20,7 +13,7 @@ from pathlib import Path
 from threading import Lock, Thread
 from typing import Any
 
-from flask import Flask, abort, render_template, request
+from flask import Flask, abort, jsonify, render_template, request
 from flask_socketio import SocketIO, join_room
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
@@ -86,16 +79,16 @@ def team_scoreboard(slug: str) -> str:
 
 
 @app.route("/api/live-teams")
-def api_live_teams() -> list[str]:
+def api_live_teams():
     with live_lock:
-        return sorted(live_team_slugs)
+        return jsonify(sorted(live_team_slugs))
 
 
 # =====================================================
 # SOCKET SECURITY
 # =====================================================
 @socketio.on("connect")
-def on_connect() -> bool | None:
+def on_connect():
     key = request.args.get("key") or request.headers.get("X-Scoreboard-Key")
     if key != SCOREBOARD_SECRET or len(clients) >= MAX_CLIENTS:
         return False
@@ -106,7 +99,7 @@ def on_connect() -> bool | None:
 
 
 @socketio.on("disconnect")
-def on_disconnect() -> None:
+def on_disconnect():
     clients.discard(request.sid)
     with scraper_lock:
         joined = sid_rooms.pop(request.sid, set())
@@ -114,16 +107,11 @@ def on_disconnect() -> None:
             room_counts[room] = max(0, room_counts.get(room, 0) - 1)
 
 
-browser = p.chromium.launch(
-    headless=True,
-    args=["--no-sandbox", "--disable-dev-shm-usage"]
-)
-
 # =====================================================
 # SOCKET ROOM JOIN
 # =====================================================
 @socketio.on("join_team")
-def join_team_handler(data: dict[str, Any]) -> None:
+def join_team_handler(data):
     slug = (data or {}).get("slug")
     team = TEAM_BY_SLUG.get(slug)
     if not team:
@@ -137,7 +125,11 @@ def join_team_handler(data: dict[str, Any]) -> None:
         sid_rooms.setdefault(request.sid, set()).add(room)
         room_counts[room] = room_counts.get(room, 0) + 1
         if room not in scrapers:
-            thread = Thread(target=scrape_loop, args=(int(team["id"]), slug, room), daemon=True)
+            thread = Thread(
+                target=scrape_loop,
+                args=(int(team["id"]), slug, room),
+                daemon=True,
+            )
             scrapers[room] = thread
             thread.start()
             app.logger.info("Started scraper for %s", room)
@@ -147,67 +139,88 @@ def join_team_handler(data: dict[str, Any]) -> None:
 # SCRAPER HELPERS
 # =====================================================
 def _extract_match_state_from_page(page: Any, team_id: int) -> dict[str, Any] | None:
-    """Return a match state if the given team is currently live.
+    team = next((t for t in TEAM_BY_SLUG.values() if int(t["id"]) == int(team_id)), None)
+    if not team:
+        app.logger.warning("No team found for team_id=%s", team_id)
+        return None
 
-    This avoids depending on one exact row class or one exact score span class.
-    Instead, it starts from team links and walks up the DOM to find a nearby
-    container that includes a score in the form "N | N".
-    """
-    candidate_links = page.query_selector_all("a[href*='/team/'], a[href*='/app/team/']")
-    app.logger.info("Found %d candidate team links for team_id=%s", len(candidate_links), team_id)
+    target_name = team["name"].strip().lower()
 
-    for link in candidate_links:
-        href = (link.get_attribute("href") or "").strip()
-        if f"/team/{team_id}" not in href and f"/app/team/{team_id}" not in href:
+    try:
+        page_text = page.inner_text("body")
+        app.logger.info("Page body sample for %s: %r", team_id, page_text[:1000])
+    except Exception as exc:
+        app.logger.warning("Could not read page body for %s: %s", team_id, exc)
+
+    blocks = page.query_selector_all("body *")
+    app.logger.info("Scanning %d DOM blocks for team_id=%s", len(blocks), team_id)
+
+    for block in blocks:
+        try:
+            text = (block.inner_text() or "").strip()
+        except Exception:
             continue
 
-        container = link.evaluate_handle(
-            """
-            element => {
-                let node = element;
-                for (let i = 0; i < 8 && node; i += 1, node = node.parentElement) {
-                    const text = (node.innerText || '').trim();
-                    if (/\\d+\\s*\\|\\s*\\d+/.test(text)) {
-                        return node;
-                    }
-                }
-                return element.parentElement;
-            }
-            """
-        ).as_element()
-
-        if not container:
+        if not text:
             continue
 
-        text = (container.inner_text() or "").strip()
-        score_match = re.search(r"(\\d+)\\s*\\|\\s*(\\d+)", text)
+        if target_name not in text.lower():
+            continue
+
+        app.logger.info("Candidate block for %s: %r", team_id, text[:500])
+
+        score_match = re.search(r"(\d+)\s*\|\s*(\d+)", text)
         if not score_match:
-            app.logger.info("Skipping candidate without score pattern: %s", text[:250])
             continue
 
-        team_links = container.query_selector_all("a[href*='/team/'], a[href*='/app/team/']")
-        teams: list[tuple[str, str]] = []
-        seen_hrefs: set[str] = set()
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        names: list[str] = []
 
-        for team_link in team_links:
-            team_href = (team_link.get_attribute("href") or "").strip()
-            team_name = (team_link.inner_text() or "").strip()
-            if "/team/" not in team_href or not team_name or team_href in seen_hrefs:
+        for line in lines:
+            low = line.lower()
+            if "|" in line:
                 continue
-            seen_hrefs.add(team_href)
-            teams.append((team_name, team_href))
+            if line.startswith("@"):
+                continue
+            if len(line) > 40:
+                continue
+            if low in {
+                "live",
+                "live scores",
+                "friendly",
+                "hewlett cup",
+                "league cup",
+                "premier division",
+                "division 1",
+                "division 2",
+                "division 3",
+                "division 4",
+                "division 5",
+            }:
+                continue
+            names.append(line)
 
-        if len(teams) < 2:
-            app.logger.info("Skipping candidate with fewer than 2 team links: %s", text[:250])
+        deduped: list[str] = []
+        seen = set()
+        for name in names:
+            if name not in seen:
+                seen.add(name)
+                deduped.append(name)
+
+        if len(deduped) < 2:
+            app.logger.info("Not enough team names found for %s: %r", team_id, deduped)
             continue
 
         home_score, away_score = map(int, score_match.groups())
-        return {
+        state = {
             "updated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            "home": {"name": teams[0][0], "score": home_score},
-            "away": {"name": teams[1][0], "score": away_score},
+            "home": {"name": deduped[0], "score": home_score},
+            "away": {"name": deduped[1], "score": away_score},
         }
+        app.logger.info("Live match found for %s: %r", team_id, state)
+        return state
 
+    app.logger.warning("No live match found for team_id=%s", team_id)
     return None
 
 
@@ -219,7 +232,10 @@ def scrape_loop(team_id: int, slug: str, room: str) -> None:
     socketio.emit("app_mode", {"test_mode": TEST_MODE}, room=room)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage"],
+        )
         page = browser.new_page()
 
         try:
@@ -238,6 +254,8 @@ def scrape_loop(team_id: int, slug: str, room: str) -> None:
                     page.wait_for_load_state("networkidle", timeout=15000)
                 except PlaywrightTimeoutError:
                     app.logger.warning("Timed out loading live scores page for %s", room)
+                except Exception as exc:
+                    app.logger.warning("Error loading live scores page for %s: %s", room, exc)
 
                 current_state = _extract_match_state_from_page(page, team_id)
                 found_live = current_state is not None
@@ -259,10 +277,12 @@ def scrape_loop(team_id: int, slug: str, room: str) -> None:
                     socketio.emit("score_update", current_state, room=room)
 
                 time.sleep(SCRAPE_INTERVAL)
+
         except Exception as exc:
             app.logger.exception("Fatal scrape loop error for %s: %s", room, exc)
         finally:
             browser.close()
+
 
 # =====================================================
 # ENTRY POINT
