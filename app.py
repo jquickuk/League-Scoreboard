@@ -152,12 +152,12 @@ def _extract_match_state_from_page(page: Any, team_id: int) -> dict[str, Any] | 
     except Exception as exc:
         app.logger.warning("Could not read page body for %s: %s", team_id, exc)
 
-    blocks = page.query_selector_all("body *")
-    app.logger.info("Scanning %d DOM blocks for team_id=%s", len(blocks), team_id)
+    cards = page.query_selector_all("div.row.pb-3.mx-0")
+    app.logger.info("Scanning %d match cards for team_id=%s", len(cards), team_id)
 
-    for block in blocks:
+    for card in cards:
         try:
-            text = (block.inner_text() or "").strip()
+            text = (card.inner_text() or "").strip()
         except Exception:
             continue
 
@@ -167,55 +167,84 @@ def _extract_match_state_from_page(page: Any, team_id: int) -> dict[str, Any] | 
         if target_name not in text.lower():
             continue
 
-        app.logger.info("Candidate block for %s: %r", team_id, text[:500])
-
-        score_match = re.search(r"(\d+)\s*\|\s*(\d+)", text)
-        if not score_match:
-            continue
+        app.logger.info("Candidate card for %s: %r", team_id, text[:500])
 
         lines = [line.strip() for line in text.splitlines() if line.strip()]
-        names: list[str] = []
+        score_index = None
+        score_match = None
 
-        for line in lines:
+        for i, line in enumerate(lines):
+            m = re.fullmatch(r"(\d+)\s*\|\s*(\d+)", line)
+            if m:
+                score_index = i
+                score_match = m
+                break
+
+        if score_index is None or score_match is None:
+            continue
+
+        before = None
+        after = None
+
+        ignored_lines = {
+            "live",
+            "live scores",
+            "friendly",
+            "hewlett cup",
+            "league cup",
+            "share tweet share",
+            "facebook group",
+            "information",
+            "fixtures",
+            "results",
+            "league tables",
+            "player stats",
+            "competitions",
+            "roll of honour",
+            "about us",
+            "terms and conditions",
+            "privacy policy",
+            "release notes",
+            "status and maintenance",
+        }
+
+        for i in range(score_index - 1, -1, -1):
+            line = lines[i]
             low = line.lower()
-            if "|" in line:
-                continue
             if line.startswith("@"):
+                continue
+            if "|" in line:
                 continue
             if len(line) > 40:
                 continue
-            if low in {
-                "live",
-                "live scores",
-                "friendly",
-                "hewlett cup",
-                "league cup",
-                "premier division",
-                "division 1",
-                "division 2",
-                "division 3",
-                "division 4",
-                "division 5",
-            }:
+            if low in ignored_lines:
                 continue
-            names.append(line)
+            before = line
+            break
 
-        deduped: list[str] = []
-        seen = set()
-        for name in names:
-            if name not in seen:
-                seen.add(name)
-                deduped.append(name)
+        for i in range(score_index + 1, len(lines)):
+            line = lines[i]
+            low = line.lower()
+            if line.startswith("@"):
+                continue
+            if "|" in line:
+                continue
+            if len(line) > 40:
+                continue
+            if low in ignored_lines:
+                continue
+            after = line
+            break
 
-        if len(deduped) < 2:
-            app.logger.info("Not enough team names found for %s: %r", team_id, deduped)
+        if not before or not after:
+            app.logger.info("Could not identify teams around score for %s", team_id)
             continue
 
         home_score, away_score = map(int, score_match.groups())
         state = {
             "updated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            "home": {"name": deduped[0], "score": home_score},
-            "away": {"name": deduped[1], "score": away_score},
+            "home": {"name": before, "score": home_score},
+            "away": {"name": after, "score": away_score},
         }
         app.logger.info("Live match found for %s: %r", team_id, state)
         return state
